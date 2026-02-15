@@ -12,14 +12,14 @@ function save_fft(F::FFTData, FFTOUT::String)
         mkpath(FFTOUT)
     end
 
-    # check if F is on the GPU 
-    if isa(F.fft,AbstractGPUArray)
-        F = F |> cpu
+    # check if F is on the GPU
+    if isa(F.fft, AbstractGPUArray)
+        F = cpu(F)
     end
 
     # create JLD2 file and save FFT
-    net,sta,loc,chan = split(F.name,'.')
-    filename = joinpath(FFTOUT,"$(F.name).jld2")
+    net, sta, loc, chan = split(F.name, '.')
+    filename = joinpath(FFTOUT, "$(F.name).jld2")
     file = jldopen(filename, "a+")
     if !(chan in keys(file))
         group = JLD2.Group(file, chan)
@@ -33,34 +33,34 @@ end
 
 """
 
-  load_fft(filename,chan,day=day)
+    load_fft(filename,chan,day=day)
 
 Loads FFTData for channel `chan` from JLD2 file `filename`.
 If day is specified, loads data from day `day`, else
 loads data from all days of `chan`.
 """
-function load_fft(filename::String,chan::String;day::Union{String,Missing}=missing)
-    file = jldopen(filename,"r")
+function load_fft(filename::String, chan::String; day::Union{String,Missing}=missing)
+    file = jldopen(filename, "r")
     if ismissing(day)
         days = keys(file[chan])
-        num_days  = length(days)
+        num_days = length(days)
 
         # get sizes of all corrs
-        sizes = Array{Int}(undef,num_days,2)
+        sizes = Array{Int}(undef, num_days, 2)
 
-        for ii = 1:num_days
-            sizes[ii,:]=collect(size(file[chan][days[ii]].fft))
+        for ii in 1:num_days
+            sizes[ii, :]=collect(size(file[chan][days[ii]].fft))
         end
 
         # create empty arrays and get indicies
         M = sizes[1]
-        N = sum(sizes[:,2])
-        ffts = Array{eltype(file[chan][days[1]].fft)}(undef,M,N)
-        t = Array{eltype(file[chan][days[1]].t)}(undef,N)
-        starts = cumsum(vcat(1 ,sizes[:,2]))[1:end-1]
-        ends = cumsum(sizes[:,2])
-        for ii = 1:num_days
-            ffts[:,starts[ii]:ends[ii]] = file[chan][days[ii]].fft
+        N = sum(sizes[:, 2])
+        ffts = Array{eltype(file[chan][days[1]].fft)}(undef, M, N)
+        t = Array{eltype(file[chan][days[1]].t)}(undef, N)
+        starts = cumsum(vcat(1, sizes[:, 2]))[1:(end - 1)]
+        ends = cumsum(sizes[:, 2])
+        for ii in 1:num_days
+            ffts[:, starts[ii]:ends[ii]] = file[chan][days[ii]].fft
             t[starts[ii]:ends[ii]] = file[chan][days[ii]].t
         end
 
@@ -88,12 +88,12 @@ function save_corr(C::CorrData, CORROUT::String)
     end
 
     # check if C is on the GPU
-    if isa(C.corr,AbstractGPUArray)
-        C = C |> cpu
+    if isa(C.corr, AbstractGPUArray)
+        C = cpu(C)
     end
 
     # create JLD2 file and save correlation
-    filename = joinpath(CORROUT,"$(C.name).jld2")
+    filename = joinpath(CORROUT, "$(C.name).jld2")
     file = jldopen(filename, "a+")
     if !(C.comp in keys(file))
         group = JLD2.Group(file, C.comp)
@@ -107,33 +107,32 @@ end
 
 """
 
-  load_corr(filename,chan,day=day)
+    load_corr(filename,chan,day=day)
 
 Loads CorrData for channel `chan` on day `day` from JLD2 file `filename`.
 """
-function load_corr(filename::String,chan::String;
-                   day::Union{String,Missing}=missing)
-    file = jldopen(filename,"r")
+function load_corr(filename::String, chan::String; day::Union{String,Missing}=missing)
+    file = jldopen(filename, "r")
     if ismissing(day) # load all files
         days = keys(file[chan])
-        num_days  = length(days)
+        num_days = length(days)
 
         # get sizes of all corrs
-        sizes = Array{Int}(undef,num_days,2)
+        sizes = Array{Int}(undef, num_days, 2)
 
-        for ii = 1:num_days
-            sizes[ii,:]=collect(size(file[chan][days[ii]].corr))
+        for ii in 1:num_days
+            sizes[ii, :]=collect(size(file[chan][days[ii]].corr))
         end
 
         # create empty arrays and get indicies
         M = sizes[1]
-        N = sum(sizes[:,2])
-        corrs = Array{eltype(file[chan][days[1]].corr)}(undef,M,N)
-        t = Array{eltype(file[chan][days[1]].t)}(undef,N)
-        starts = cumsum(vcat(1 ,sizes[:,2]))[1:end-1]
-        ends = cumsum(sizes[:,2])
-        for ii = 1:num_days
-            corrs[:,starts[ii]:ends[ii]] = file[chan][days[ii]].corr
+        N = sum(sizes[:, 2])
+        corrs = Array{eltype(file[chan][days[1]].corr)}(undef, M, N)
+        t = Array{eltype(file[chan][days[1]].t)}(undef, N)
+        starts = cumsum(vcat(1, sizes[:, 2]))[1:(end - 1)]
+        ends = cumsum(sizes[:, 2])
+        for ii in 1:num_days
+            corrs[:, starts[ii]:ends[ii]] = file[chan][days[ii]].corr
             t[starts[ii]:ends[ii]] = file[chan][days[ii]].t
         end
 

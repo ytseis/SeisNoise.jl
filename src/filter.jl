@@ -5,7 +5,7 @@ export highpass, highpass!, taper, taper!, envelope
 export resample, resample!
 
 """
-   bandpass!(A,freqmin,freqmax,fs,corners=4,zerophase=true)
+    bandpass!(A,freqmin,freqmax,fs,corners=4,zerophase=true)
 
 Butterworth-Bandpass Filter.
 
@@ -21,89 +21,151 @@ Filter data `A` from `freqmin` to `freqmax` using `corners` corners.
 This results in twice the filter order but zero phase shift in
 the resulting filtered trace.
 """
-function bandpass!(A::AbstractArray{<:AbstractFloat},
-                   freqmin::Real, freqmax::Real, fs::Real;
-                   corners::Int=4, zerophase::Bool=true)
-   T = eltype(A)
-   fe = T(0.5 * fs)
-   low = T(freqmin / fe)
-   high = T(freqmax / fe)
+function bandpass!(
+    A::AbstractArray{<:AbstractFloat},
+    freqmin::Real,
+    freqmax::Real,
+    fs::Real;
+    corners::Int=4,
+    zerophase::Bool=true,
+)
+    T = eltype(A)
+    fe = T(0.5 * fs)
+    low = T(freqmin / fe)
+    high = T(freqmax / fe)
 
-   # warn if above Nyquist frequency
-   if high - oneunit(high) > -1e-6
-       @warn "Selected high corner frequency ($freqmax) of bandpass is at or
-       above Nyquist ($fe). Applying a high-pass instead."
-       highpass!(A,freqmin,fs,corners=corners,zerophase=zerophase)
-       return nothing
-   end
+    # warn if above Nyquist frequency
+    if high - oneunit(high) > -1e-6
+        @warn "Selected high corner frequency ($freqmax) of bandpass is at or
+        above Nyquist ($fe). Applying a high-pass instead."
+        highpass!(A, freqmin, fs; corners=corners, zerophase=zerophase)
+        return nothing
+    end
 
-   # throw error if low above Nyquist frequency
-   if low >= 1
-       throw(ArgumentError("Selected low corner frequency is above Nyquist."))
-   end
+    # throw error if low above Nyquist frequency
+    if low >= 1
+        throw(ArgumentError("Selected low corner frequency is above Nyquist."))
+    end
 
-   # create filter
-   responsetype = Bandpass(T(freqmin), T(freqmax); fs=fs)
-   designmethod = Butterworth(T,corners)
+    # create filter
+    responsetype = Bandpass(T(freqmin), T(freqmax); fs=fs)
+    designmethod = Butterworth(T, corners)
 
-   # use gpu-specific kernel if on the GPU
-   if isa(A,AbstractGPUArray)
-       gpufilter!(A,responsetype,designmethod)
-       return nothing
-   end
+    # use gpu-specific kernel if on the GPU
+    if isa(A, AbstractGPUArray)
+        gpufilter!(A, responsetype, designmethod)
+        return nothing
+    end
 
-   # filter if on the CPU
-   if zerophase
-       A[:,:] .= filtfilt(digitalfilter(responsetype, designmethod), @view(A[:,:]))
-   else
-       A[:,:] .= filt(digitalfilter(responsetype, designmethod), @view(A[:,:]))
-   end
+    # filter if on the CPU
+    if zerophase
+        A[:, :] .= filtfilt(digitalfilter(responsetype, designmethod), @view(A[:, :]))
+    else
+        A[:, :] .= filt(digitalfilter(responsetype, designmethod), @view(A[:, :]))
+    end
 
-   return nothing
+    return nothing
 end
-bandpass(A::AbstractArray{<:AbstractFloat},freqmin::Real,
-         freqmax::Real, fs::Real; corners::Int=4,zerophase::Bool=true) =
-         (U = deepcopy(A);bandpass!(U,freqmin,freqmax, fs, corners=corners,
-          zerophase=zerophase);return U)
-bandpass!(R::RawData,freqmin::Real,freqmax::Real;
-          corners::Int=4,zerophase::Bool=true) = (bandpass!(R.x,freqmin,freqmax,
-          R.fs,corners=corners,zerophase=zerophase);setfield!(R,:freqmin,Float64(freqmin));
-          setfield!(R,:freqmax,Float64(min(freqmax,R.fs/2)));return nothing)
-bandpass(R::RawData,freqmin::Real,freqmax::Real;
-        corners::Int=4,zerophase::Bool=true) = (U = deepcopy(R);bandpass!(U.x,
-        freqmin,freqmax,U.fs,corners=corners,zerophase=zerophase);
-        setfield!(U,:freqmin,Float64(freqmin));
-        setfield!(U,:freqmax,Float64(min(freqmax,U.fs/2)));return U)
-bandpass!(C::CorrData,freqmin::Real,freqmax::Real;
-        corners::Int=4,zerophase::Bool=true) = (bandpass!(C.corr,freqmin,freqmax,
-        C.fs,corners=corners,zerophase=zerophase);setfield!(C,:freqmin,Float64(freqmin));
-        setfield!(C,:freqmax,Float64(min(freqmax,C.fs/2)));return nothing)
-bandpass(C::CorrData,freqmin::Real,freqmax::Real;
-        corners::Int=4,zerophase::Bool=true) = (U = deepcopy(C);bandpass!(U.corr,
-        freqmin,freqmax,U.fs,corners=corners,zerophase=zerophase);
-        setfield!(U,:freqmin,Float64(freqmin));
-        setfield!(U,:freqmax,Float64(min(freqmax,U.fs/2)));return U)
-bandpass!(C::SeisChannel, freqmin::Real, freqmax::Real;
-                   corners::Int=4, zerophase::Bool=true) = filtfilt!(C,
-                   fl=Float64(freqmin),fh=Float64(freqmax),np=corners,rt="Bandpass")
-bandpass(C::SeisChannel,freqmin::Real, freqmax::Real; corners::Int=4,
-         zerophase::Bool=true) = (U = deepcopy(C);bandpass!(U,freqmin,freqmax,
-                                  corners=corners,zerophase=zerophase);return U)
-bandpass!(S::SeisData, freqmin::Real, freqmax::Real;
-                   corners::Int=4, zerophase::Bool=true) = filtfilt!(S,
-                   fl=Float64(freqmin),fh=Float64(freqmax),np=corners,rt="Bandpass")
-bandpass(S::SeisData, freqmin::Real, freqmax::Real; corners::Int=4,
-         zerophase::Bool=true) = filtfilt(S,fl=Float64(freqmin),fh=Float64(freqmax),np=corners,rt="Bandpass")
-bandpass!(N::NodalData,freqmin::Real,freqmax::Real;
-         corners::Int=4,zerophase::Bool=true) = (bandpass!(N.data,freqmin,freqmax,
-         N.fs[1],corners=corners,zerophase=zerophase);return nothing)
-bandpass(N::NodalData,freqmin::Real,freqmax::Real;
-       corners::Int=4,zerophase::Bool=true) = (U = deepcopy(N);bandpass!(N.data,
-       freqmin,freqmax,N.fs[1],corners=corners,zerophase=zerophase);
-       return U)
+function bandpass(
+    A::AbstractArray{<:AbstractFloat},
+    freqmin::Real,
+    freqmax::Real,
+    fs::Real;
+    corners::Int=4,
+    zerophase::Bool=true,
+)
+    (
+        U=deepcopy(A);
+        bandpass!(U, freqmin, freqmax, fs; corners=corners, zerophase=zerophase);
+        return U
+    )
+end
+function bandpass!(
+    R::RawData, freqmin::Real, freqmax::Real; corners::Int=4, zerophase::Bool=true
+)
+    (
+        bandpass!(R.x, freqmin, freqmax, R.fs; corners=corners, zerophase=zerophase);
+        setfield!(R, :freqmin, Float64(freqmin));
+        setfield!(R, :freqmax, Float64(min(freqmax, R.fs/2)));
+        return nothing
+    )
+end
+function bandpass(
+    R::RawData, freqmin::Real, freqmax::Real; corners::Int=4, zerophase::Bool=true
+)
+    (
+        U=deepcopy(R);
+        bandpass!(U.x, freqmin, freqmax, U.fs; corners=corners, zerophase=zerophase);
+        setfield!(U, :freqmin, Float64(freqmin));
+        setfield!(U, :freqmax, Float64(min(freqmax, U.fs/2)));
+        return U
+    )
+end
+function bandpass!(
+    C::CorrData, freqmin::Real, freqmax::Real; corners::Int=4, zerophase::Bool=true
+)
+    (
+        bandpass!(C.corr, freqmin, freqmax, C.fs; corners=corners, zerophase=zerophase);
+        setfield!(C, :freqmin, Float64(freqmin));
+        setfield!(C, :freqmax, Float64(min(freqmax, C.fs/2)));
+        return nothing
+    )
+end
+function bandpass(
+    C::CorrData, freqmin::Real, freqmax::Real; corners::Int=4, zerophase::Bool=true
+)
+    (
+        U=deepcopy(C);
+        bandpass!(U.corr, freqmin, freqmax, U.fs; corners=corners, zerophase=zerophase);
+        setfield!(U, :freqmin, Float64(freqmin));
+        setfield!(U, :freqmax, Float64(min(freqmax, U.fs/2)));
+        return U
+    )
+end
+function bandpass!(
+    C::SeisChannel, freqmin::Real, freqmax::Real; corners::Int=4, zerophase::Bool=true
+)
+    filtfilt!(C; fl=Float64(freqmin), fh=Float64(freqmax), np=corners, rt="Bandpass")
+end
+function bandpass(
+    C::SeisChannel, freqmin::Real, freqmax::Real; corners::Int=4, zerophase::Bool=true
+)
+    (
+        U=deepcopy(C);
+        bandpass!(U, freqmin, freqmax; corners=corners, zerophase=zerophase);
+        return U
+    )
+end
+function bandpass!(
+    S::SeisData, freqmin::Real, freqmax::Real; corners::Int=4, zerophase::Bool=true
+)
+    filtfilt!(S; fl=Float64(freqmin), fh=Float64(freqmax), np=corners, rt="Bandpass")
+end
+function bandpass(
+    S::SeisData, freqmin::Real, freqmax::Real; corners::Int=4, zerophase::Bool=true
+)
+    filtfilt(S; fl=Float64(freqmin), fh=Float64(freqmax), np=corners, rt="Bandpass")
+end
+function bandpass!(
+    N::NodalData, freqmin::Real, freqmax::Real; corners::Int=4, zerophase::Bool=true
+)
+    (
+        bandpass!(N.data, freqmin, freqmax, N.fs[1]; corners=corners, zerophase=zerophase);
+        return nothing
+    )
+end
+function bandpass(
+    N::NodalData, freqmin::Real, freqmax::Real; corners::Int=4, zerophase::Bool=true
+)
+    (
+        U=deepcopy(N);
+        bandpass!(N.data, freqmin, freqmax, N.fs[1]; corners=corners, zerophase=zerophase);
+        return U
+    )
+end
 
 """
-  bandstop!(A,freqmin,freqmax,fs,corners=4,zerophase=true)
+    bandstop!(A,freqmin,freqmax,fs,corners=4,zerophase=true)
 
 Butterworth-Bandstop Filter.
 
@@ -120,9 +182,14 @@ Filter data `A` removing data between frequencies `freqmin` to `freqmax` using
 This results in twice the filter order but zero phase shift in
 the resulting filtered trace.
 """
-function bandstop!(A::AbstractArray{<:AbstractFloat},
-                 freqmin::Real,freqmax::Real,fs::Real;
-                 corners::Int=4, zerophase::Bool=true)
+function bandstop!(
+    A::AbstractArray{<:AbstractFloat},
+    freqmin::Real,
+    freqmax::Real,
+    fs::Real;
+    corners::Int=4,
+    zerophase::Bool=true,
+)
     T = eltype(A)
     fe = T(0.5 * fs)
     low = T(freqmin / fe)
@@ -130,67 +197,117 @@ function bandstop!(A::AbstractArray{<:AbstractFloat},
 
     # throw error if high above Nyquist frequency
     if high >= 1
-        throw(ArgumentError("Selected high corner frequency $freqmax Hz is above Nyquist $(fs/2) Hz."))
+        throw(
+            ArgumentError(
+                "Selected high corner frequency $freqmax Hz is above Nyquist $(fs/2) Hz."
+            ),
+        )
     end
 
     # throw error if low above Nyquist frequency
     if low >= 1
-        throw(ArgumentError("Selected low corner frequency $freqmin Hz is above Nyquist $(fs/2) Hz."))
+        throw(
+            ArgumentError(
+                "Selected low corner frequency $freqmin Hz is above Nyquist $(fs/2) Hz."
+            ),
+        )
     end
 
     # create filter
     responsetype = Bandstop(T(freqmin), T(freqmax); fs=fs)
-    designmethod = Butterworth(T,corners)
+    designmethod = Butterworth(T, corners)
 
     # use gpu-specific kernel if on the GPU
-    if isa(A,AbstractGPUArray)
-        gpufilter!(A,responsetype,designmethod)
+    if isa(A, AbstractGPUArray)
+        gpufilter!(A, responsetype, designmethod)
         return nothing
     end
 
     # filter if on the CPU
     if zerophase
-        A[:,:] .= filtfilt(digitalfilter(responsetype, designmethod), @view(A[:,:]))
+        A[:, :] .= filtfilt(digitalfilter(responsetype, designmethod), @view(A[:, :]))
     else
-        A[:,:] .= filt(digitalfilter(responsetype, designmethod), @view(A[:,:]))
+        A[:, :] .= filt(digitalfilter(responsetype, designmethod), @view(A[:, :]))
     end
 
     return nothing
 end
-bandstop(A::AbstractArray{<:AbstractFloat},freqmin::Real,
-      freqmax::Real, fs::Real; corners::Int=4,zerophase::Bool=true) =
-      (U = deepcopy(A);bandstop!(U,freqmin,freqmax,fs,corners=corners,
-      zerophase=zerophase);return U)
-bandstop!(R::RawData,freqmin::Real,freqmax::Real;
- corners::Int=4,zerophase::Bool=true) = bandstop!(R.x,freqmin,freqmax,
- R.fs,corners=corners,zerophase=zerophase)
-bandstop(R::RawData,freqmin::Real,freqmax::Real;
-corners::Int=4,zerophase::Bool=true) = (U = deepcopy(R);bandstop!(U.x,
-freqmin,freqmax,U.fs,corners=corners,zerophase=zerophase);return U)
-bandstop!(C::CorrData,freqmin::Real,freqmax::Real;
- corners::Int=4,zerophase::Bool=true) = bandstop!(C.corr,freqmin,freqmax,
- C.fs,corners=corners,zerophase=zerophase)
-bandstop(C::CorrData,freqmin::Real,freqmax::Real;
-corners::Int=4,zerophase::Bool=true) = (U = deepcopy(C);bandstop!(U.corr,
-freqmin,freqmax,U.fs,corners=corners,zerophase=zerophase);return U)
-bandstop!(C::SeisChannel, freqmin::Real, freqmax::Real;
-                   corners::Int=4, zerophase::Bool=true) = filtfilt!(C,
-                   fl=Float64(freqmin),fh=Float64(freqmax),np=corners,rt="Bandstop")
-bandstop(C::SeisChannel,freqmin::Real, freqmax::Real; corners::Int=4,
-         zerophase::Bool=true) = filtfilt(C,
-         fl=Float64(freqmin),fh=Float64(freqmax),np=corners,rt="Bandstop")
-bandstop!(S::SeisData, freqmin::Real, freqmax::Real;
-                   corners::Int=4, zerophase::Bool=true) = filtfilt!(S,
-                   fl=Float64(freqmin),fh=Float64(freqmax),np=corners,rt="Bandstop")
-bandstop(S::SeisData,freqmin::Real, freqmax::Real; corners::Int=4,
-         zerophase::Bool=true) = filtfilt(S,
-         fl=Float64(freqmin),fh=Float64(freqmax),np=corners,rt="Bandstop")
-bandstop!(N::NodalData,freqmin::Real,freqmax::Real;
-    corners::Int=4,zerophase::Bool=true) = bandstop!(N.data,freqmin,freqmax,
-    N.fs[1],corners=corners,zerophase=zerophase)
-bandstop(N::NodalData,freqmin::Real,freqmax::Real;
-    corners::Int=4,zerophase::Bool=true) = (U = deepcopy(N);bandstop!(N.data,
-    freqmin,freqmax,U.fs[1],corners=corners,zerophase=zerophase);return U)
+function bandstop(
+    A::AbstractArray{<:AbstractFloat},
+    freqmin::Real,
+    freqmax::Real,
+    fs::Real;
+    corners::Int=4,
+    zerophase::Bool=true,
+)
+    (
+        U=deepcopy(A);
+        bandstop!(U, freqmin, freqmax, fs; corners=corners, zerophase=zerophase);
+        return U
+    )
+end
+function bandstop!(
+    R::RawData, freqmin::Real, freqmax::Real; corners::Int=4, zerophase::Bool=true
+)
+    bandstop!(R.x, freqmin, freqmax, R.fs; corners=corners, zerophase=zerophase)
+end
+function bandstop(
+    R::RawData, freqmin::Real, freqmax::Real; corners::Int=4, zerophase::Bool=true
+)
+    (
+        U=deepcopy(R);
+        bandstop!(U.x, freqmin, freqmax, U.fs; corners=corners, zerophase=zerophase);
+        return U
+    )
+end
+function bandstop!(
+    C::CorrData, freqmin::Real, freqmax::Real; corners::Int=4, zerophase::Bool=true
+)
+    bandstop!(C.corr, freqmin, freqmax, C.fs; corners=corners, zerophase=zerophase)
+end
+function bandstop(
+    C::CorrData, freqmin::Real, freqmax::Real; corners::Int=4, zerophase::Bool=true
+)
+    (
+        U=deepcopy(C);
+        bandstop!(U.corr, freqmin, freqmax, U.fs; corners=corners, zerophase=zerophase);
+        return U
+    )
+end
+function bandstop!(
+    C::SeisChannel, freqmin::Real, freqmax::Real; corners::Int=4, zerophase::Bool=true
+)
+    filtfilt!(C; fl=Float64(freqmin), fh=Float64(freqmax), np=corners, rt="Bandstop")
+end
+function bandstop(
+    C::SeisChannel, freqmin::Real, freqmax::Real; corners::Int=4, zerophase::Bool=true
+)
+    filtfilt(C; fl=Float64(freqmin), fh=Float64(freqmax), np=corners, rt="Bandstop")
+end
+function bandstop!(
+    S::SeisData, freqmin::Real, freqmax::Real; corners::Int=4, zerophase::Bool=true
+)
+    filtfilt!(S; fl=Float64(freqmin), fh=Float64(freqmax), np=corners, rt="Bandstop")
+end
+function bandstop(
+    S::SeisData, freqmin::Real, freqmax::Real; corners::Int=4, zerophase::Bool=true
+)
+    filtfilt(S; fl=Float64(freqmin), fh=Float64(freqmax), np=corners, rt="Bandstop")
+end
+function bandstop!(
+    N::NodalData, freqmin::Real, freqmax::Real; corners::Int=4, zerophase::Bool=true
+)
+    bandstop!(N.data, freqmin, freqmax, N.fs[1]; corners=corners, zerophase=zerophase)
+end
+function bandstop(
+    N::NodalData, freqmin::Real, freqmax::Real; corners::Int=4, zerophase::Bool=true
+)
+    (
+        U=deepcopy(N);
+        bandstop!(N.data, freqmin, freqmax, U.fs[1]; corners=corners, zerophase=zerophase);
+        return U
+    )
+end
 
 """
 lowpass(A,freq,fs,corners=4,zerophase=true)
@@ -208,8 +325,13 @@ Filter data `A` over certain frequency `freq` using `corners` corners.
 This results in twice the filter order but zero phase shift in
 the resulting filtered trace.
 """
-function lowpass!(A::AbstractArray{<:AbstractFloat},freq::Real,
-                fs::Real; corners::Int=4, zerophase::Bool=true)
+function lowpass!(
+    A::AbstractArray{<:AbstractFloat},
+    freq::Real,
+    fs::Real;
+    corners::Int=4,
+    zerophase::Bool=true,
+)
     fe = 0.5 * fs
     f = freq / fe
     T = eltype(A)
@@ -223,58 +345,86 @@ function lowpass!(A::AbstractArray{<:AbstractFloat},freq::Real,
 
     # create filter
     responsetype = Lowpass(T(freq); fs=fs)
-    designmethod = Butterworth(T,corners)
+    designmethod = Butterworth(T, corners)
 
     # use gpu-specific kernel if on the GPU
-    if isa(A,AbstractGPUArray)
-        gpufilter!(A,responsetype,designmethod)
+    if isa(A, AbstractGPUArray)
+        gpufilter!(A, responsetype, designmethod)
         return nothing
     end
 
     # filter if on the CPU
     if zerophase
-        A[:,:] .= filtfilt(digitalfilter(responsetype, designmethod), @view(A[:,:]))
+        A[:, :] .= filtfilt(digitalfilter(responsetype, designmethod), @view(A[:, :]))
     else
-        A[:,:] .= filt(digitalfilter(responsetype, designmethod), @view(A[:,:]))
+        A[:, :] .= filt(digitalfilter(responsetype, designmethod), @view(A[:, :]))
     end
     return nothing
 end
-lowpass(A::AbstractArray{<:AbstractFloat},freq::Real, fs::Real;
-      corners::Int=4,zerophase::Bool=true) = (U = deepcopy(A);
-      lowpass!(U,freq,fs,corners=corners,zerophase=zerophase);return U)
-lowpass!(R::RawData,freq::Real; corners::Int=4,
-       zerophase::Bool=true) = (lowpass!(R.x,freq,R.fs,corners=corners,
-       zerophase=zerophase);setfield!(R,:freqmax,Float64(min(freq,R.fs/2)));
-       return nothing)
-lowpass(R::RawData,freq::Real; corners::Int=4,
-       zerophase::Bool=true) = (U = deepcopy(R);lowpass!(U.x,freq,U.fs,
-       corners=corners,zerophase=zerophase);
-       setfield!(U,:freqmax,Float64(min(freq,U.fs/2)));return U)
-lowpass!(C::CorrData,freq::Real; corners::Int=4,
-      zerophase::Bool=true) = (lowpass!(C.corr,freq,C.fs,corners=corners,
-      zerophase=zerophase);setfield!(C,:freqmax,Float64(min(freq,C.fs/2)));
-      return nothing)
-lowpass(C::CorrData,freq::Real; corners::Int=4,
-      zerophase::Bool=true) = (U = deepcopy(C);lowpass!(U.corr,freq,U.fs,
-      corners=corners,zerophase=zerophase);
-      setfield!(U,:freqmax,Float64(min(freq,U.fs/2)));return U)
-lowpass!(C::SeisChannel, freq::Real;corners::Int=4, zerophase::Bool=true) =
-    filtfilt!(C,fh=Float64(freq),np=corners,rt="Lowpass")
-lowpass(C::SeisChannel,freq::Real; corners::Int=4,zerophase::Bool=true) =
-    filtfilt(C,fh=Float64(freq),np=corners,rt="Lowpass")
-lowpass!(S::SeisData, freq::Real;corners::Int=4, zerophase::Bool=true) =
-    filtfilt!(S,fh=Float64(freq),np=corners,rt="Lowpass")
-lowpass(S::SeisData,freq::Real; corners::Int=4,zerophase::Bool=true) =
-    filtfilt(S,fh=Float64(freq),np=corners,rt="Lowpass")
-lowpass!(N::NodalData,freq::Real; corners::Int=4,
-    zerophase::Bool=true) = (lowpass!(N.data,freq,N.fs[1],corners=corners,
-    zerophase=zerophase);return nothing)
-lowpass(N::NodalData,freq::Real; corners::Int=4,
-    zerophase::Bool=true) = (U = deepcopy(N);lowpass!(N.data,freq,U.fs[1],
-    corners=corners,zerophase=zerophase);return U)
+function lowpass(
+    A::AbstractArray{<:AbstractFloat},
+    freq::Real,
+    fs::Real;
+    corners::Int=4,
+    zerophase::Bool=true,
+)
+    (U=deepcopy(A); lowpass!(U, freq, fs; corners=corners, zerophase=zerophase); return U)
+end
+function lowpass!(R::RawData, freq::Real; corners::Int=4, zerophase::Bool=true)
+    (
+        lowpass!(R.x, freq, R.fs; corners=corners, zerophase=zerophase);
+        setfield!(R, :freqmax, Float64(min(freq, R.fs/2)));
+        return nothing
+    )
+end
+function lowpass(R::RawData, freq::Real; corners::Int=4, zerophase::Bool=true)
+    (
+        U=deepcopy(R);
+        lowpass!(U.x, freq, U.fs; corners=corners, zerophase=zerophase);
+        setfield!(U, :freqmax, Float64(min(freq, U.fs/2)));
+        return U
+    )
+end
+function lowpass!(C::CorrData, freq::Real; corners::Int=4, zerophase::Bool=true)
+    (
+        lowpass!(C.corr, freq, C.fs; corners=corners, zerophase=zerophase);
+        setfield!(C, :freqmax, Float64(min(freq, C.fs/2)));
+        return nothing
+    )
+end
+function lowpass(C::CorrData, freq::Real; corners::Int=4, zerophase::Bool=true)
+    (
+        U=deepcopy(C);
+        lowpass!(U.corr, freq, U.fs; corners=corners, zerophase=zerophase);
+        setfield!(U, :freqmax, Float64(min(freq, U.fs/2)));
+        return U
+    )
+end
+function lowpass!(C::SeisChannel, freq::Real; corners::Int=4, zerophase::Bool=true)
+    filtfilt!(C; fh=Float64(freq), np=corners, rt="Lowpass")
+end
+function lowpass(C::SeisChannel, freq::Real; corners::Int=4, zerophase::Bool=true)
+    filtfilt(C; fh=Float64(freq), np=corners, rt="Lowpass")
+end
+function lowpass!(S::SeisData, freq::Real; corners::Int=4, zerophase::Bool=true)
+    filtfilt!(S; fh=Float64(freq), np=corners, rt="Lowpass")
+end
+function lowpass(S::SeisData, freq::Real; corners::Int=4, zerophase::Bool=true)
+    filtfilt(S; fh=Float64(freq), np=corners, rt="Lowpass")
+end
+function lowpass!(N::NodalData, freq::Real; corners::Int=4, zerophase::Bool=true)
+    (lowpass!(N.data, freq, N.fs[1]; corners=corners, zerophase=zerophase); return nothing)
+end
+function lowpass(N::NodalData, freq::Real; corners::Int=4, zerophase::Bool=true)
+    (
+        U=deepcopy(N);
+        lowpass!(N.data, freq, U.fs[1]; corners=corners, zerophase=zerophase);
+        return U
+    )
+end
 
 """
-   highpass(A,freq,fs,corners=4,zerophase=true)
+    highpass(A,freq,fs,corners=4,zerophase=true)
 
 Butterworth-Highpass Filter.
 
@@ -289,66 +439,105 @@ Filter data `A` removing data below certain frequency `freq` using `corners` cor
 This results in twice the filter order but zero phase shift in
 the resulting filtered trace.
 """
-function highpass!(A::AbstractArray{<:AbstractFloat},freq::Real,
-                  fs::Real; corners::Int=4, zerophase::Bool=true)
+function highpass!(
+    A::AbstractArray{<:AbstractFloat},
+    freq::Real,
+    fs::Real;
+    corners::Int=4,
+    zerophase::Bool=true,
+)
     fe = 0.5 * fs
     f = freq / fe
     T = eltype(A)
 
     # warn if above Nyquist frequency
     if f >= 1
-        throw(ArgumentError("Selected low corner frequency $freq Hz is above Nyquist $(fs/2) Hz."))
+        throw(
+            ArgumentError(
+                "Selected low corner frequency $freq Hz is above Nyquist $(fs/2) Hz."
+            ),
+        )
     end
 
     # create filter
     responsetype = Highpass(T(freq); fs=fs)
-    designmethod = Butterworth(T,corners)
+    designmethod = Butterworth(T, corners)
 
     # use gpu-specific kernel if on the GPU
-    if isa(A,AbstractGPUArray)
-        gpufilter!(A,responsetype,designmethod)
+    if isa(A, AbstractGPUArray)
+        gpufilter!(A, responsetype, designmethod)
         return nothing
     end
 
     # filter if on the CPU
     if zerophase
-        A[:,:] .= filtfilt(digitalfilter(responsetype, designmethod), @view(A[:,:]))
+        A[:, :] .= filtfilt(digitalfilter(responsetype, designmethod), @view(A[:, :]))
     else
-        A[:,:] .= filt(digitalfilter(responsetype, designmethod), @view(A[:,:]))
+        A[:, :] .= filt(digitalfilter(responsetype, designmethod), @view(A[:, :]))
     end
     return nothing
 end
-highpass(A::AbstractArray{<:AbstractFloat},freq::Real,fs::Real;
-        corners::Int=4,zerophase::Bool=true) = (U = deepcopy(A);
-        highpass!(U,freq,fs,corners=corners,zerophase=zerophase);return U)
-highpass!(R::RawData,freq::Real; corners::Int=4,
-        zerophase::Bool=true) = (highpass!(R.x,freq,R.fs,corners=corners,
-        zerophase=zerophase);setfield!(R,:freqmin,Float64(freq));return nothing)
-highpass(R::RawData,freq::Real; corners::Int=4,
-        zerophase::Bool=true) = (U = deepcopy(R);highpass!(U.x,freq,U.fs,
-        corners=corners,zerophase=zerophase);setfield!(U,:freqmin,Float64(freq));
-        return U)
-highpass!(C::CorrData,freq::Real; corners::Int=4,
-        zerophase::Bool=true) = (highpass!(C.corr,freq,C.fs,corners=corners,
-        zerophase=zerophase);setfield!(C,:freqmin,Float64(freq));return nothing)
-highpass(C::CorrData,freq::Real; corners::Int=4,
-        zerophase::Bool=true) = (U = deepcopy(C);highpass!(U.corr,freq,U.fs,
-        corners=corners,zerophase=zerophase);setfield!(U,:freqmin,Float64(freq));
-        return U)
-highpass!(C::SeisChannel, freq::Real;corners::Int=4, zerophase::Bool=true) =
-    filtfilt!(C,fl=Float64(freq),np=corners,rt="Highpass")
-highpass(C::SeisChannel,freq::Real; corners::Int=4,zerophase::Bool=true) =
-    filtfilt(C,fl=Float64(freq),np=corners,rt="Highpass")
-highpass!(S::SeisData, freq::Real;corners::Int=4, zerophase::Bool=true) =
-    filtfilt!(S,fl=Float64(freq),np=corners,rt="Highpass")
-highpass(S::SeisData,freq::Real; corners::Int=4,zerophase::Bool=true) =
-    filtfilt(S,fl=Float64(freq),np=corners,rt="Highpass")
-highpass!(N::NodalData,freq::Real; corners::Int=4,
-    zerophase::Bool=true) = (highpass!(N.data,freq,N.fs[1],corners=corners,
-    zerophase=zerophase);return nothing)
-highpass(N::NodalData,freq::Real; corners::Int=4,
-    zerophase::Bool=true) = (U = deepcopy(N);highpass!(N.data,freq,U.fs[1],
-    corners=corners,zerophase=zerophase);return U)
+function highpass(
+    A::AbstractArray{<:AbstractFloat},
+    freq::Real,
+    fs::Real;
+    corners::Int=4,
+    zerophase::Bool=true,
+)
+    (U=deepcopy(A); highpass!(U, freq, fs; corners=corners, zerophase=zerophase); return U)
+end
+function highpass!(R::RawData, freq::Real; corners::Int=4, zerophase::Bool=true)
+    (
+        highpass!(R.x, freq, R.fs; corners=corners, zerophase=zerophase);
+        setfield!(R, :freqmin, Float64(freq));
+        return nothing
+    )
+end
+function highpass(R::RawData, freq::Real; corners::Int=4, zerophase::Bool=true)
+    (
+        U=deepcopy(R);
+        highpass!(U.x, freq, U.fs; corners=corners, zerophase=zerophase);
+        setfield!(U, :freqmin, Float64(freq));
+        return U
+    )
+end
+function highpass!(C::CorrData, freq::Real; corners::Int=4, zerophase::Bool=true)
+    (
+        highpass!(C.corr, freq, C.fs; corners=corners, zerophase=zerophase);
+        setfield!(C, :freqmin, Float64(freq));
+        return nothing
+    )
+end
+function highpass(C::CorrData, freq::Real; corners::Int=4, zerophase::Bool=true)
+    (
+        U=deepcopy(C);
+        highpass!(U.corr, freq, U.fs; corners=corners, zerophase=zerophase);
+        setfield!(U, :freqmin, Float64(freq));
+        return U
+    )
+end
+function highpass!(C::SeisChannel, freq::Real; corners::Int=4, zerophase::Bool=true)
+    filtfilt!(C; fl=Float64(freq), np=corners, rt="Highpass")
+end
+function highpass(C::SeisChannel, freq::Real; corners::Int=4, zerophase::Bool=true)
+    filtfilt(C; fl=Float64(freq), np=corners, rt="Highpass")
+end
+function highpass!(S::SeisData, freq::Real; corners::Int=4, zerophase::Bool=true)
+    filtfilt!(S; fl=Float64(freq), np=corners, rt="Highpass")
+end
+function highpass(S::SeisData, freq::Real; corners::Int=4, zerophase::Bool=true)
+    filtfilt(S; fl=Float64(freq), np=corners, rt="Highpass")
+end
+function highpass!(N::NodalData, freq::Real; corners::Int=4, zerophase::Bool=true)
+    (highpass!(N.data, freq, N.fs[1]; corners=corners, zerophase=zerophase); return nothing)
+end
+function highpass(N::NodalData, freq::Real; corners::Int=4, zerophase::Bool=true)
+    (
+        U=deepcopy(N);
+        highpass!(N.data, freq, U.fs[1]; corners=corners, zerophase=zerophase);
+        return U
+    )
+end
 
 """
     envelope(A)
@@ -361,14 +550,13 @@ Computes the upper and lower envelopes of the given function.
 - `A::AbstractArray`: Data to make envelope of.
 """
 function envelope(A::AbstractArray)
-    Amean = mean(A,dims=1)
+    Amean = mean(A; dims=1)
     Acentered = A .- Amean
     env = abs.(hilbert(Acentered))
     upper = env .+ Amean
     lower = -env .+ Amean
     return upper, lower
 end
-
 
 """
     gpufilter!(A,responsetype,designmethod)
@@ -381,28 +569,30 @@ Apply filter to array `A` on the GPU.
 - `designmethod::ZeroPoleGain`: Filter representation in terms of zeros `z`, poles `p`, and
 gain `k`.
 """
-function gpufilter!(A::AbstractGPUArray,responsetype::FilterType,designmethod::ZeroPoleGain)
+function gpufilter!(
+    A::AbstractGPUArray, responsetype::FilterType, designmethod::ZeroPoleGain
+)
     T = Float64
-    N = size(A,1)
+    N = size(A, 1)
     tf = convert(PolynomialRatio, digitalfilter(responsetype, designmethod))
 
     # get filter coefficients in Float64 to avoid divide by zero
     b = coefb(tf)
     a = coefa(tf)
-    newb = CUDA.zeros(T,N)
-    newa = CUDA.zeros(T,N)
-    copyto!(newb,b)
-    copyto!(newa,a)
+    newb = CUDA.zeros(T, N)
+    newa = CUDA.zeros(T, N)
+    copyto!(newb, b)
+    copyto!(newa, a)
     bafft = rfft(newb) ./ rfft(newa)
 
     # convert back to Float32 for speed
-    bafft = map(x->convert(ComplexF32,x), bafft)
+    bafft = map(x->convert(ComplexF32, x), bafft)
 
     # apply filter
-    A .= irfft(rfft(A,1) .* bafft, N, 1)
-    reverse!(A,dims=1)
-    A .= irfft(rfft(A,1) .* bafft, N, 1)
-    reverse!(A,dims=1)
+    A .= irfft(rfft(A, 1) .* bafft, N, 1)
+    reverse!(A; dims=1)
+    A .= irfft(rfft(A, 1) .* bafft, N, 1)
+    reverse!(A; dims=1)
     return nothing
 end
 
@@ -415,7 +605,7 @@ Resample data in `RawData` R to new sampling rate `fs`.
 - `R::RawData`: RawData to resample.
 - `fs::Real`: New sampling frequency.
 """
-function resample!(R::RawData,fs::Real)
+function resample!(R::RawData, fs::Real)
     @assert fs > 0 "New fs must be greater than 0!"
     if R.fs == fs
         return nothing
@@ -424,12 +614,12 @@ function resample!(R::RawData,fs::Real)
     rate = T(fs / R.fs)
     R.x = resample_kernel(R.x, rate)
     R.fs = Float64(fs)
-    if (R.freqmax <  fs / 2) && (rate < 1.0)
+    if (R.freqmax < fs / 2) && (rate < 1.0)
         R.freqmax = Float64(fs / 2)
     end
     return nothing
 end
-resample(R::RawData,fs::Real) = (U = deepcopy(R); resample!(U,fs); return U)
+resample(R::RawData, fs::Real) = (U=deepcopy(R); resample!(U, fs); return U)
 
 """
     resample!(C, fs)
@@ -440,7 +630,7 @@ Resample data in CorrData` C to new sampling rate `fs`.
 - `C::CorrData`: CorrData to resample.
 - `fs::Real`: New sampling frequency.
 """
-function resample!(C::CorrData,fs::Real)
+function resample!(C::CorrData, fs::Real)
     @assert fs > 0 "New fs must be greater than 0!"
     if C.fs == fs
         return nothing
@@ -449,14 +639,14 @@ function resample!(C::CorrData,fs::Real)
     rate = T(fs / C.fs)
     C.corr = resample_kernel(C.corr, rate)
     C.fs = Float64(fs)
-    if (C.freqmax <  fs / 2) && (rate < 1.0)
+    if (C.freqmax < fs / 2) && (rate < 1.0)
         C.freqmax = Float64(fs / 2)
     end
     return nothing
 end
-resample(C::CorrData,fs::Real) = (U = deepcopy(C); resample!(U,fs); return U)
+resample(C::CorrData, fs::Real) = (U=deepcopy(C); resample!(U, fs); return U)
 
-function resample_kernel(x::AbstractMatrix,rate::Real)
+function resample_kernel(x::AbstractMatrix, rate::Real)
     T = eltype(x)
     h = resample_filter(rate)
     self = FIRFilter(h, rate)
@@ -474,15 +664,15 @@ function resample_kernel(x::AbstractMatrix,rate::Real)
     outLen = ceil(Int, Nrows*rate)
     reqInlen = inputlength(self, outLen)
     reqZerosLen = reqInlen - Nrows
-    xPadded     = [x; zeros(T, reqZerosLen, Ncols)]
+    xPadded = [x; zeros(T, reqZerosLen, Ncols)]
 
     # fill empty matrix
-    out = zeros(T,outLen,Ncols)
-    xout = filt(deepcopy(self), xPadded[:,1])
+    out = zeros(T, outLen, Ncols)
+    xout = filt(deepcopy(self), xPadded[:, 1])
     xlength = length(xout)
-    out[1:xlength,1] .= xout
-    @inbounds for ii = 2:Ncols
-        out[1:xlength,ii] .= filt(deepcopy(self), xPadded[:,ii])
+    out[1:xlength, 1] .= xout
+    @inbounds for ii in 2:Ncols
+        out[1:xlength, ii] .= filt(deepcopy(self), xPadded[:, ii])
     end
     return out
 end

@@ -6,7 +6,7 @@ using Statistics, StatsBase, CUDA, Adapt, GPUArrays, RecipesBase
 # check use of cuda
 const use_cuda = Ref(false)
 if !CUDA.functional()
-  else
+else
     use_cuda[] = true
 end
 

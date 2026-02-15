@@ -9,12 +9,12 @@ Signal to noise ratio of cross-correlations in matrix `A`.
 Follows method of Clarke et. al, 2011. Measures SNR at each point.
 """
 function snr(A::AbstractArray)
-    Nrows,Ncols = size(A)
-    A_mean = mean(A,dims=2)
+    Nrows, Ncols = size(A)
+    A_mean = mean(A; dims=2)
 
     # calculate noise and envelope functions
-    sigma = mean(A.^2,dims=2) .- A_mean.^2
-    sigma .= sqrt.(sigma./ (Ncols-1))
+    sigma = mean(A .^ 2; dims=2) .- A_mean .^ 2
+    sigma .= sqrt.(sigma ./ (Ncols-1))
     s = abs.(A_mean .+ im .* hilbert(A_mean))
     return s ./ sigma
 end
@@ -28,21 +28,28 @@ Smooth array `A` with half-window `half_win` (defaults to 3).
 function smooth!(A::AbstractArray, half_win::Int=3, dims::Int=1)
     T = eltype(A)
     window_len = 2 * half_win + 1
-    csumsize = tuple(collect(size(A)) .+ [i==1 ? 2 * (window_len - 1) + 1 : 0 for i in 1:ndims(A)]...)
-    csum = similar(A,T,csumsize)
-    csum[1:window_len,:] .= zero(T)
-    csum[end - window_len + 1:end,:] .= zero(T)
-    csum[window_len+1:end-window_len + 1,:] .= A
-    csum .= cumsum(csum,dims=dims)
-    weight = similar(A,T,size(A,1))
-    weight[1:half_win] = T.(window_len ÷ 2 + 1:window_len - 1)
-    weight[half_win + 1: end - half_win] .= T(window_len)
-    weight[end-half_win:end] = T.(window_len:-1:window_len ÷ 2 + 1)
-    A[:,:] .= (csum[window_len+half_win+1:end-half_win,:] .- csum[half_win+1:end-window_len-half_win,:]) ./ weight
+    csumsize = tuple(
+        collect(size(A)) .+ [i==1 ? 2 * (window_len - 1) + 1 : 0 for i in 1:ndims(A)]...
+    )
+    csum = similar(A, T, csumsize)
+    csum[1:window_len, :] .= zero(T)
+    csum[(end - window_len + 1):end, :] .= zero(T)
+    csum[(window_len + 1):(end - window_len + 1), :] .= A
+    csum .= cumsum(csum; dims=dims)
+    weight = similar(A, T, size(A, 1))
+    weight[1:half_win] = T.((window_len ÷ 2 + 1):(window_len - 1))
+    weight[(half_win + 1):(end - half_win)] .= T(window_len)
+    weight[(end - half_win):end] = T.(window_len:-1:(window_len ÷ 2 + 1))
+    A[:, :] .=
+        (
+            csum[(window_len + half_win + 1):(end - half_win), :] .-
+            csum[(half_win + 1):(end - window_len - half_win), :]
+        ) ./ weight
     return nothing
 end
-smooth(A::AbstractArray,half_win::Int=3, dims::Int=1) =
-      (U = deepcopy(A);smooth!(U,half_win,dims);return U)
+function smooth(A::AbstractArray, half_win::Int=3, dims::Int=1)
+    (U=deepcopy(A); smooth!(U, half_win, dims); return U)
+end
 
 """
     abs_max!(A)
@@ -50,16 +57,16 @@ smooth(A::AbstractArray,half_win::Int=3, dims::Int=1) =
 Returns array `A` divided by its absolute maximum value.
 """
 function abs_max!(A::AbstractArray)
-    maxabs = maximum(abs.(A),dims=1)
+    maxabs = maximum(abs.(A); dims=1)
     if any(maxabs .== 0)
         throw(DomainError("All zero column leads to NaN"))
     end
     A ./= maxabs
     return nothing
 end
-abs_max(A::AbstractArray) = (U = deepcopy(A);abs_max!(U);return U)
+abs_max(A::AbstractArray) = (U=deepcopy(A); abs_max!(U); return U)
 abs_max!(C::CorrData) = abs_max!(C.corr)
-abs_max(C::CorrData) = (U = deepcopy(C);abs_max!(U);return U)
+abs_max(C::CorrData) = (U=deepcopy(C); abs_max!(U); return U)
 
 """
     standardize!(A)
@@ -67,13 +74,13 @@ abs_max(C::CorrData) = (U = deepcopy(C);abs_max!(U);return U)
 Demean and standardize array `A` to unit std.
 """
 function standardize!(A::AbstractArray)
-    A .-= mean(A,dims=1)
-    A ./= std(A,dims=1)
+    A .-= mean(A; dims=1)
+    A ./= std(A; dims=1)
     return nothing
 end
-standardize(A::AbstractArray) = (U = deepcopy(A);standardize!(U);return U)
+standardize(A::AbstractArray) = (U=deepcopy(A); standardize!(U); return U)
 standardize!(C::CorrData) = standardize!(C.corr)
-standardize(C::CorrData) = (U = deepcopy(C);standardize!(U);return U)
+standardize(C::CorrData) = (U=deepcopy(C); standardize!(U); return U)
 
 """
     mad(A)
@@ -82,24 +89,24 @@ Median Absolute Deviation of array `A`.
 MAD = median(|Xi- median(A)|)
 """
 function mad(A::AbstractArray)
-    return median(abs.(A .- median(A,dims=1)),dims=1)
+    return median(abs.(A .- median(A; dims=1)); dims=1)
 end
 mad(C::CorrData) = mad(C.corr)
 
 """
 
-  std_threshold(A,thresh)
+    std_threshold(A,thresh)
 
 Returns indices of cols of `A` where max(abs.A[:,col]))/std(A[:,col]) < `max_std`.
 """
 function std_threshold(A::AbstractArray, max_std::Real)
-    stds = std(A,dims=1)[1,:]
-    maxs = maximum(abs.(A),dims=1)[1,:]
+    stds = std(A; dims=1)[1, :]
+    maxs = maximum(abs.(A); dims=1)[1, :]
     threshs = maxs ./ stds
     ind = []
-    for ii = 1:length(threshs)
+    for ii in 1:length(threshs)
         if threshs[ii] < max_std
-            append!(ind,ii)
+            append!(ind, ii)
         end
     end
     return ind

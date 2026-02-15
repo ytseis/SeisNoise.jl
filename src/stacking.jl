@@ -1,5 +1,6 @@
 export stack, stack!, remove_nan, remove_nan!, shorten, shorten!
 export pws, pws!, robuststack, robuststack!, adaptive_filter!, adaptive_filter
+export nthroot, nthroot!
 export robustpws, robustpws!, medianmute, medianmute!
 """
 
@@ -194,6 +195,33 @@ end
 pws!(C::CorrData; pow::Real=2) = (C.corr=pws(C.corr, pow=pow); C.t=C.t[1:1]; return nothing)
 function pws(C::CorrData; pow::Real=2)
     (U=deepcopy(C); U.corr=pws(U.corr; pow=pow); U.t=U.t[1:1]; return U)
+end
+
+"""
+    nthroot(A; pow::Real=2)
+
+Performs Nth root stack on array `A` of time series.
+
+Follows methods of Rost and Thomas, 2002.
+v'_u,N = 1/M sum i=1:M |x_i(t - t_u,i)|^(1/N) * sign(x_i(t - t_u,i))
+v_u,N = sign(v'_u,N) * |v'_u,N|^N
+
+# Arguments
+- `A::AbstractArray`: Time series stored in columns.
+- `pow::Int`: Power to use in nth root stack. Default is 2,
+"""
+function nthroot(A::AbstractArray{T}; pow::Real=2) where {T<:AbstractFloat}
+    # preserve type-stability
+    if !isa(pow, Int)
+        pow = T(pow)
+    end
+    Nrows, Ncols = size(A)
+    stacked_pow = mean(sign.(A) .* abs.(A).^(1/pow), dims=2)
+    return sign.(stacked_pow) .* abs.(stacked_pow).^pow
+end
+nthroot!(C::CorrData; pow::Real=2) = (C.corr=nthroot(C.corr, pow=pow); C.t=C.t[1:1]; return nothing)
+function nthroot(C::CorrData; pow::Real=2)
+    (U=deepcopy(C); U.corr=nthroot(U.corr, pow=pow); U.t=U.t[1:1]; return U)
 end
 
 """

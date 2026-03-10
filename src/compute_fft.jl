@@ -1,5 +1,6 @@
 export process_raw, process_raw!, process_fft, rfft
 export onebit!, onebit, remove_response!, remove_response, remove_amp!, remove_amp
+export running_average!, running_average
 export clip, clip!, clamp, clamp!, mute!, mute, phase
 import Base: clamp, clamp!
 import FFTW: rfft
@@ -267,6 +268,7 @@ One-bit amplitude modification of RawData `R`.
 """
 function onebit!(R::RawData)
     R.x .= sign.(R.x)
+    push!(R.notes, SeisBase.tnote("onebit normalization applied"))
     return nothing
 end
 onebit(R::RawData) = (U=deepcopy(R); onebit!(U); return U)
@@ -289,4 +291,56 @@ function nonzero(A::AbstractArray)
         end
     end
     return ind
+end
+
+# modified by ytseis
+
+"""
+    running_average!(A, half_width)
+
+Apply running average normalization to array `A` with specified `half_width`.
+
+- `A`: AbstractVector, SeisChannel, SeisData, or RawData to normalize.
+- `half_width`: Number of samples on either side of the current sample to include in the running average window. The total window width will be `2 * half_width + 1`.
+"""
+function running_average!(x::AbstractArray, half_width::Int=10)
+    n = length(x)
+
+    # compute weights
+    weights = similar(x)
+    for j in eachindex(x)
+        i_start = max(1, j - half_width)
+        i_end = min(n, j + half_width)
+        weights[j] = sum(abs, @view x[i_start:i_end]) / (2half_width + 1)
+    end
+
+    # normalize
+    x ./= weights
+    return nothing
+end
+function running_average(x::AbstractArray, half_width::Int=10)
+    (x_copy=copy(x); running_average!(x_copy, half_width); x_copy)
+end
+# running_average!(S::SeisChannel, half_width::Int=10) = running_average!(S.x, half_width)
+function running_average!(S::SeisChannel, half_width::Int=10)
+    running_average!(S.x, half_width)
+    note!(S, "running average normalization applied (half width = $half_width samples)")
+    return nothing
+end
+function running_average(S::SeisChannel, half_width::Int=10)
+    (S_copy=deepcopy(S); running_average!(S_copy, half_width); S_copy)
+end
+function running_average!(S::SeisData, half_width::Int=10)
+    [running_average!(S[i], half_width) for i in 1:S.n]
+end
+function running_average(S::SeisData, half_width::Int=10)
+    (S_copy=deepcopy(S); running_average!(S_copy, half_width); S_copy)
+end
+function running_average!(R::RawData, half_width::Int=10)
+    running_average!(R.x, half_width)
+    push!(R.notes, SeisBase.tnote("running average normalization applied (half width = $half_width samples)"))
+    return nothing
+end
+function running_average(R::RawData, half_width::Int=10)
+    (R_copy=deepcopy(R); running_average!(R_copy, half_width); R_copy)
 end

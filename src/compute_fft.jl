@@ -1,6 +1,6 @@
 export process_raw, process_raw!, process_fft, rfft
 export onebit!, onebit, remove_response!, remove_response, remove_amp!, remove_amp
-export running_average!, running_average
+export running_average!, running_average, running_average_multi!, running_average_multi
 export clip, clip!, clamp, clamp!, mute!, mute, phase
 import Base: clamp, clamp!
 import FFTW: rfft
@@ -321,7 +321,6 @@ end
 function running_average(x::AbstractArray, half_width::Int=10)
     (x_copy=copy(x); running_average!(x_copy, half_width); x_copy)
 end
-# running_average!(S::SeisChannel, half_width::Int=10) = running_average!(S.x, half_width)
 function running_average!(S::SeisChannel, half_width::Int=10)
     running_average!(S.x, half_width)
     note!(S, "running average normalization applied (half width = $half_width samples)")
@@ -344,3 +343,77 @@ end
 function running_average(R::RawData, half_width::Int=10)
     (R_copy=deepcopy(R); running_average!(R_copy, half_width); R_copy)
 end
+
+"""
+    running_average_multi!(xs::AbstractVector{<:AbstractArray}, half_width::Int=10)
+
+Apply running average normalization to multiple arrays simultaneously, using the maximum weight across all arrays at each time step.
+
+This operation is commutable with rotation (Lin et al., 2008).
+"""
+function running_average_multi!(xs::AbstractVector{<:AbstractArray}, half_width::Int=10)
+    n = length(xs[1])
+    @assert all(x -> length(x) == n, xs) "All input arrays must have the same length"
+
+    # Array to store the maximum weight across all components
+    weights_max = zeros(eltype(xs[1]), n)
+
+    # Denominator for the window size
+    win_len = 2 * half_width + 1
+
+    # Calculate the running average for each component and update the maximum weight
+    for x in xs
+        for j in 1:n
+            i_start = max(1, j - half_width)
+            i_end = min(n, j + half_width)
+
+            # Average of absolute values at each time point
+            val = sum(abs, @view x[i_start:i_end]) / win_len
+
+            # Keep the maximum weight (as per Lin et al., 2008's "the larger is used")
+            weights_max[j] = max(weights_max[j], val)
+        end
+    end
+
+    for x in xs
+        for j in 1:n
+            x[j] /= (weights_max[j] + eps(eltype(xs[1])))
+        end
+    end
+
+    return nothing
+end
+function running_average_multi(xs::AbstractVector{<:AbstractArray}, half_width::Int=10)
+    (xs_copy=[copy(x) for x in xs]; running_average_multi!(xs_copy, half_width); xs_copy)
+end
+function running_average_multi!(Cs::AbstractVector{<:SeisChannel}, half_width::Int=10)
+    running_average_multi!([C.x for C in Cs], half_width)
+    for C in Cs
+        note!(C, "running average normalization applied (half width = $half_width samples)")
+    end
+    return nothing
+end
+function running_average_multi(Cs::AbstractVector{<:SeisChannel}, half_width::Int=10)
+    (Cs_copy=deepcopy(Cs); running_average_multi!(Cs_copy, half_width); Cs_copy)
+end
+function running_average_multi!(S::SeisData, half_width::Int=10)
+    running_average_multi!([S[i].x for i in 1:S.n], half_width)
+    for i in 1:S.n
+        note!(S[i], "running average normalization applied (half width = $half_width samples)")
+    end
+    return nothing
+end
+function running_average_multi(S::SeisData, half_width::Int=10)
+    (S_copy=deepcopy(S); running_average_multi!(S_copy, half_width); S_copy)
+end
+function running_average_multi!(Rs::AbstractVector{<:RawData}, half_width::Int=10)
+    running_average_multi!([R.x for R in Rs], half_width)
+    for R in Rs
+        push!(R.notes, SeisBase.tnote("running average normalization applied (half width = $half_width samples)"))
+    end
+    return nothing
+end
+function running_average_multi(Rs::AbstractVector{<:RawData}, half_width::Int=10)
+    (Rs_copy=deepcopy(Rs); running_average_multi!(Rs_copy, half_width); Rs_copy)
+end
+

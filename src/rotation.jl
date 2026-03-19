@@ -51,7 +51,7 @@ function rotate!(corrs::Array{CorrData,1}, azi::Real, baz::Real)
     update_corr!(corrs[comp_dict["EE"]], rotated[1, :, :], "TT")
     update_corr!(corrs[comp_dict["EN"]], rotated[2, :, :], "RR")
     update_corr!(corrs[comp_dict["NN"]], rotated[3, :, :], "TR")
-    update_corr!(corrs[comp_dict["NE"]], rotated[3, :, :], "RT")
+    update_corr!(corrs[comp_dict["NE"]], rotated[4, :, :], "RT")
 
     # rotate from EZ NZ to RZ TZ
     azi_rot = [

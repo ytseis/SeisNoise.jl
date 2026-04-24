@@ -272,6 +272,10 @@ function onebit!(R::RawData)
     return nothing
 end
 onebit(R::RawData) = (U=deepcopy(R); onebit!(U); return U)
+onebit!(S::SeisChannel) = (S.x .= sign.(S.x))
+onebit(S::SeisChannel) = (deepcopy(S) |> onebit!)
+onebit!(S::SeisData) = ([onebit!(S[i]) for i in 1:S.n]; return nothing)
+onebit(S::SeisData) = (deepcopy(S) |> onebit!)
 
 """
 nonzero(A)
@@ -416,4 +420,3 @@ end
 function running_average_multi(Rs::AbstractVector{<:RawData}, half_width::Int=10)
     (Rs_copy=deepcopy(Rs); running_average_multi!(Rs_copy, half_width); Rs_copy)
 end
-
